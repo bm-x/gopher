@@ -4,43 +4,45 @@ import win32api
 import win32con
 import win32gui
 import win32ui
-
+import numpy as np
+from bound import TimeNode, Slice
 import cv2 as cv
 
-loop = False
+loop = True
 drawResult = False
-intervals = [0.15, 0.1, 0.6]
+drawCapture = False
 vpt = 0.6
-captureFileName = "capture.bmp"
 baseWidth = 1080
-
-
-class Cut:
-    pass
-
-
-findsName = ("find1.bmp", "find2.bmp", "find3.bmp", "find4.bmp")
-findsSet = {"find1.bmp": "小地鼠", "find2.bmp": "大地鼠", "find3.bmp": "宝箱一", "find4.bmp": "宝箱二"}
-finds = []
+imagineFindTime = 0.02
+captureFileName = "capture.bmp"
+timeNodes = (
+    TimeNode(15, 0.1, 0.28),
+    TimeNode(30, 0.09, 0.2),
+    TimeNode(60, 0.07, 0.1),
+    TimeNode(90, 0.05, 0.08),
+    TimeNode(120, 0.04, 0.06)
+)
+slices = (
+    Slice("find1.bmp", "小地鼠"),
+    Slice("find2.bmp", "大地鼠"),
+    Slice("find3.bmp", "宝箱一"),
+    Slice("find4.bmp", "宝箱二")
+)
 
 
 def prepareFinds():
-    for findName in findsName:
-        cut = Cut()
-        img = cv.imread(findName, 0)
+    for slice in slices:
+        img = cv.imread(slice.fileName, 0)
         x, y = img.shape[::-1]
-        cut.name = findsSet[findName]
-        cut.filePath = findName
-        cut.width = int(x / ratio)
-        cut.height = int(y / ratio)
-        cut.img = cv.resize(img, (cut.width, cut.height), interpolation=cv.INTER_CUBIC)
-        cut.centerX = int(cut.width / 2)
-        cut.centerY = int(cut.height / 2)
-        cut.covertName = "%s_resize_gray.png" % findName[:-4]
-        finds.append(cut)
+        slice.width = int(x / ratio)
+        slice.height = int(y / ratio)
+        slice.img = cv.resize(img, (slice.width, slice.height), interpolation=cv.INTER_CUBIC)
+        slice.centerX = int(slice.width / 2)
+        slice.centerY = int(slice.height / 2)
+        slice.covertName = "%s_resize_gray.png" % slice.fileName[:-4]
 
-    # for cut in finds:
-    #     cv.imwrite(cut.covertName, cut.img)
+    # for slice in slices:
+    #     cv.imwrite(slice.covertName, slice.img)
 
 
 def findWindow():
@@ -52,7 +54,45 @@ def findWindow():
     return hwndChildList[0]
 
 
-def capture(hwnd, name=captureFileName):
+def capture(hwnd):
+    hwndDC = win32gui.GetWindowDC(hwnd)
+    mfcDC = win32ui.CreateDCFromHandle(hwndDC)
+    saveDC = mfcDC.CreateCompatibleDC()
+    bitmap = win32ui.CreateBitmap()
+    bitmap.CreateCompatibleBitmap(mfcDC, ww, wh)
+    saveDC.SelectObject(bitmap)
+    saveDC.BitBlt((0, 0), (ww, wh), mfcDC, (0, 0), win32con.SRCCOPY)
+    if drawCapture: bitmap.SaveBitmapFile(saveDC, captureFileName)
+    arr = bitmap.GetBitmapBits(True)
+    img = np.fromstring(arr, dtype=np.uint8)
+    img.shape = (wh, ww, 4)
+    mfcDC.DeleteDC()
+    saveDC.DeleteDC()
+    win32gui.ReleaseDC(hwnd, hwndDC)
+    win32gui.DeleteObject(bitmap.GetHandle())
+    return cv.cvtColor(img, cv.COLOR_RGBA2GRAY)
+
+
+def findLocation(capture):
+    for slice in slices:
+        res = cv.matchTemplate(capture, slice.img, cv.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv.minMaxLoc(res)
+
+        if max_val < vpt: continue
+
+        if drawResult:
+            rgb = cv.imread(captureFileName)
+            cv.rectangle(rgb, max_loc, (max_loc[0] + slice.width, max_loc[1] + slice.height), (0, 0, 255), 3)
+            cv.rectangle(capture, max_loc, (max_loc[0] + slice.width, max_loc[1] + slice.height), (0, 0, 255), 3)
+            cv.imwrite("find_gray.png", slice.img)
+            cv.imwrite("res_rgb.png", rgb)
+            cv.imwrite("res_gray.png", capture)
+
+        return int(max_loc[0] + slice.centerX), int(max_loc[1] + slice.centerY), slice.name
+    return None
+
+
+def capture2(hwnd, name=captureFileName):
     hwndDC = win32gui.GetWindowDC(hwnd)
     mfcDC = win32ui.CreateDCFromHandle(hwndDC)
     saveDC = mfcDC.CreateCompatibleDC()
@@ -63,10 +103,10 @@ def capture(hwnd, name=captureFileName):
     bitmap.SaveBitmapFile(saveDC, name)
 
 
-def findLocation():
+def findLocation2():
     capture = cv.imread(captureFileName, 0)
-    for cut in finds:
-        res = cv.matchTemplate(capture, cut.img, cv.TM_CCOEFF_NORMED)
+    for slice in slices:
+        res = cv.matchTemplate(capture, slice.img, cv.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv.minMaxLoc(res)
 
         # print("found max value ->", max_val)
@@ -76,13 +116,13 @@ def findLocation():
 
         if drawResult:
             rgb = cv.imread(captureFileName)
-            cv.rectangle(rgb, max_loc, (max_loc[0] + cut.width, max_loc[1] + cut.height), (0, 0, 255), 3)
-            cv.rectangle(capture, max_loc, (max_loc[0] + cut.width, max_loc[1] + cut.height), (0, 0, 255), 3)
-            cv.imwrite("find_gray.png", cut.img)
+            cv.rectangle(rgb, max_loc, (max_loc[0] + slice.width, max_loc[1] + slice.height), (0, 0, 255), 3)
+            cv.rectangle(capture, max_loc, (max_loc[0] + slice.width, max_loc[1] + slice.height), (0, 0, 255), 3)
+            cv.imwrite("find_gray.png", slice.img)
             cv.imwrite("res_rgb.png", rgb)
             cv.imwrite("res_gray.png", capture)
 
-        return int(max_loc[0] + cut.centerX), int(max_loc[1] + cut.centerY), cut.name
+        return int(max_loc[0] + slice.centerX), int(max_loc[1] + slice.centerY), slice.name
     return None
 
 
@@ -115,39 +155,41 @@ def clickMouse(x, y):
 
 def runOnce():
     start = time.time()
-    capture(hwnd)
-    result = findLocation()
+
+    # do not save file
+    img = capture(hwnd)
+    result = findLocation(img)
+    useTime = time.time() - start
+
+    # save file mode
+    # capture2(hwnd)
+    # result = findLocation2()
+
     if result is not None:
         x, y, name = result
-        print("找到 -> [%s]    位置 -> (%d,%d)    用时 -> %f" % (name, x, y, (time.time() - start)))
+        print("找到 -> [%s]    位置 -> (%d,%d)    用时 -> %f" % (name, x, y, useTime))
         sendTap(x, y)
+        return True, useTime
     else:
         print("未找到匹配项")
+        return False, 0
 
 
 def runLoop():
     while True:
-        start = time.time()
-        capture(hwnd)
-        result = findLocation()
-        now = time.time()
-        if result is not None:
-            x, y, name = result
-            sendTap(x, y)
-            print("找到 -> [%s]    位置 -> (%d,%d)  用时 -> %f" % (name, x, y, (now - start)))
+        found, useTime = runOnce()
 
-        during = now - beginTime
+        during = time.time() - beginTime
+        interval = timeNodes[0].captureInterval
 
-        if during < 15:
-            interval = intervals[0]
-        elif during < 30:
-            interval = intervals[1]
-        else:
-            interval = intervals[2]
+        for index, node in enumerate(timeNodes):
+            if index >= len(timeNodes) - 1: during = node.time
+            if during <= node.time:
+                interval = node.captureInterval
+                if found: interval = node.captureInterval + node.foundDealy
+                break
 
-        # else:
-        #     pass
-        print("未找到匹配项")
+        if useTime > imagineFindTime: interval = interval - useTime + imagineFindTime
 
         time.sleep(interval)
 
