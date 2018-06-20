@@ -9,4 +9,5 @@
 .externalNativeBuild
 /.idea
 /venv
+/abc
 capture.bmp
