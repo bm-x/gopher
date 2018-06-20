@@ -13,24 +13,30 @@ drawResult = False
 drawCapture = False
 vpt = 0.6
 baseWidth = 1080
-imagineFindTime = 0.02
+imagineMatchTime = 0.03
 captureFileName = "capture.bmp"
-timeNodes = (
-    TimeNode(15, 0.1, 0.28),
-    TimeNode(30, 0.09, 0.2),
-    TimeNode(60, 0.07, 0.1),
-    TimeNode(90, 0.05, 0.08),
-    TimeNode(120, 0.04, 0.06)
+timeNodes = (  # 不同的时间点使用不同的等待时间 和 找到匹配项后的等待时间
+    TimeNode(15, 0.08, 0.4),
+    TimeNode(30, 0.07, 0.35),
+    TimeNode(45, 0.06, 0.3),
+    TimeNode(60, 0.05, 0.25),
+    TimeNode(75, 0.04, 0.2),
+    TimeNode(90, 0.03, 0.15),
+    TimeNode(105, 0.03, 0.1),
+    TimeNode(125, 0.03, 0.05),
+    TimeNode(150, 0.03, 0.03),
+    TimeNode(200, 0.03, 0.02),
 )
 slices = (
-    Slice("find1.bmp", "小地鼠"),
-    Slice("find2.bmp", "大地鼠"),
-    Slice("find3.bmp", "宝箱一"),
-    Slice("find4.bmp", "宝箱二")
+    Slice("slice1.bmp", "小地鼠"),
+    Slice("slice2.bmp", "大地鼠"),
+    Slice("slice3.bmp", "宝箱"),
+    Slice("slice4.bmp", "宝箱一"),
+    Slice("slice5.bmp", "宝箱二")
 )
 
 
-def prepareFinds():
+def prepareSlices():
     for slice in slices:
         img = cv.imread(slice.fileName, 0)
         x, y = img.shape[::-1]
@@ -171,7 +177,7 @@ def runOnce():
         sendTap(x, y)
         return True, useTime
     else:
-        print("未找到匹配项")
+        print("未找到匹配项（%s）" % useTime)
         return False, 0
 
 
@@ -189,7 +195,7 @@ def runLoop():
                 if found: interval = node.captureInterval + node.foundDealy
                 break
 
-        if useTime > imagineFindTime: interval = interval - useTime + imagineFindTime
+        if useTime > imagineMatchTime: interval = interval - useTime + imagineMatchTime
 
         time.sleep(interval)
 
@@ -204,7 +210,7 @@ ww = wright - wleft
 wh = wbotton - wtop
 ratio = baseWidth / ww
 
-prepareFinds()
+prepareSlices()
 
 if loop:
     runLoop()
